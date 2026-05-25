@@ -45,6 +45,7 @@ GrammarForge/
 │   ├── ReportView.swift
 │   └── Components.swift
 ├── GrammarForge_无周期版AI语法训练App项目方案.md
+├── Dockerfile
 └── backend/
     ├── app/main.py
     ├── requirements.txt
@@ -140,7 +141,7 @@ Use `render.yaml` as a Blueprint. Set `DEEPSEEK_API_KEY` in Render's environment
 
 ### DigitalOcean App Platform
 
-Use `.do/app.yaml` after redeeming the GitHub Student Developer Pack DigitalOcean credit. In DigitalOcean, replace the placeholder secret with your real `DEEPSEEK_API_KEY`, then add your custom domain.
+Use `.do/app.yaml` after redeeming the GitHub Student Developer Pack DigitalOcean credit. The root `Dockerfile` exists so App Platform can detect the backend even though the app code lives in `backend/`. In DigitalOcean, replace the placeholder secret with your real `DEEPSEEK_API_KEY`, then add your custom domain.
 
 For Aliyun DNS, create a CNAME record such as:
 
