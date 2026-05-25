@@ -74,7 +74,7 @@ The default implementation is `BackendAIGradingService`, which posts to:
 If `GRAMMARFORGE_BACKEND_URL` is not set while debugging, the app falls back to:
 
 ```text
-https://api.your-domain.com
+https://grammarforge-app-wtofj.ondigitalocean.app
 ```
 
 The backend environment variable is:
@@ -128,7 +128,7 @@ GRAMMARFORGE_BACKEND_URL=http://192.168.1.10:8000
 For production, deploy `backend/` and point your domain at it:
 
 ```text
-GRAMMARFORGE_BACKEND_URL=https://api.your-domain.com
+GRAMMARFORGE_BACKEND_URL=https://grammarforge-app-wtofj.ondigitalocean.app
 ```
 
 ## Deployment
@@ -146,7 +146,7 @@ Use `.do/app.yaml` after redeeming the GitHub Student Developer Pack DigitalOcea
 For Aliyun DNS, create a CNAME record such as:
 
 ```text
-api.your-domain.com -> your platform-provided domain
+api.your-domain.com -> grammarforge-app-wtofj.ondigitalocean.app
 ```
 
 ## Run

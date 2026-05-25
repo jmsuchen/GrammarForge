@@ -71,5 +71,5 @@ GRAMMARFORGE_BACKEND_URL=http://192.168.1.10:8000
 For production, use your HTTPS domain:
 
 ```text
-GRAMMARFORGE_BACKEND_URL=https://api.your-domain.com
+GRAMMARFORGE_BACKEND_URL=https://grammarforge-app-wtofj.ondigitalocean.app
 ```

@@ -67,7 +67,7 @@ enum AppConfig {
             return url
         }
 
-        return URL(string: "https://api.your-domain.com")!
+        return URL(string: "https://grammarforge-app-wtofj.ondigitalocean.app")!
     }
 }
 
