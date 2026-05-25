@@ -9,7 +9,7 @@ final class GrammarStore: ObservableObject {
 
     private let gradingService: AIGradingService
 
-    init(gradingService: AIGradingService = MockAIGradingService()) {
+    init(gradingService: AIGradingService = BackendAIGradingService()) {
         let seed = GrammarSeed.make()
         self.skills = seed.skills
         self.exercises = seed.exercises

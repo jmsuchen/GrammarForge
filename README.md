@@ -23,6 +23,7 @@ mastery = total accuracy * 70% + recent 5-question accuracy * 30%
 - Swift
 - SwiftUI
 - iOS 17+
+- FastAPI backend
 - Local in-memory data for the first MVP
 - Pluggable AI grading service interface
 
@@ -43,20 +44,43 @@ GrammarForge/
 │   ├── MistakeBookView.swift
 │   ├── ReportView.swift
 │   └── Components.swift
-└── GrammarForge_无周期版AI语法训练App项目方案.md
+├── GrammarForge_无周期版AI语法训练App项目方案.md
+└── backend/
+    ├── app/main.py
+    ├── requirements.txt
+    ├── Dockerfile
+    └── .env.example
 ```
 
 ## DeepSeek API
 
-The app currently uses `MockAIGradingService` so the training loop can run without network setup.
+The iOS app calls your backend. The backend calls DeepSeek. This keeps `DEEPSEEK_API_KEY` out of the open-source iOS app.
 
-The DeepSeek API should be connected at:
+The app-facing protocol lives in:
 
-```swift
+```text
 GrammarForge/GrammarForge/AIGradingService.swift
 ```
 
-That file already defines the app-facing protocol:
+The default implementation is `BackendAIGradingService`, which posts to:
+
+```text
+{GRAMMARFORGE_BACKEND_URL}/grade
+```
+
+If `GRAMMARFORGE_BACKEND_URL` is not set while debugging, the app falls back to:
+
+```text
+https://api.your-domain.com
+```
+
+The backend environment variable is:
+
+```text
+DEEPSEEK_API_KEY=your-real-key
+```
+
+The grading protocol:
 
 ```swift
 protocol AIGradingService {
@@ -64,27 +88,45 @@ protocol AIGradingService {
 }
 ```
 
-For a quick local prototype, add a new implementation in the same file or a new file such as `DeepSeekAIGradingService.swift`, then replace this line in `GrammarStore.swift`:
-
-```swift
-init(gradingService: AIGradingService = MockAIGradingService())
-```
-
-with:
-
-```swift
-init(gradingService: AIGradingService = DeepSeekAIGradingService())
-```
-
-Important: do not hard-code a real DeepSeek API key in the iOS app before open sourcing. For a public repository, the recommended production architecture is:
+Important: do not hard-code a real DeepSeek API key in the iOS app. For this public repository, the intended architecture is:
 
 ```text
 iOS App -> your backend API -> DeepSeek API
 ```
 
-The backend should hold `DEEPSEEK_API_KEY`, build prompts, call DeepSeek, validate JSON, and return a normalized grading result to the app.
+The backend holds `DEEPSEEK_API_KEY`, builds prompts, calls DeepSeek, validates JSON, and returns a normalized grading result to the app.
 
-For MVP experiments only, keep local secrets in an untracked config file or Xcode scheme environment variable. Never commit API keys.
+## Backend
+
+Run the API locally:
+
+```bash
+cd backend
+cp .env.example .env
+# edit .env and set DEEPSEEK_API_KEY
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+For simulator testing, set this Xcode Scheme environment variable:
+
+```text
+GRAMMARFORGE_BACKEND_URL=http://127.0.0.1:8000
+```
+
+For real iPhone testing on the same Wi-Fi, use your Mac LAN IP instead of `127.0.0.1`:
+
+```text
+GRAMMARFORGE_BACKEND_URL=http://192.168.1.10:8000
+```
+
+For production, deploy `backend/` and point your domain at it:
+
+```text
+GRAMMARFORGE_BACKEND_URL=https://api.your-domain.com
+```
 
 ## Run
 

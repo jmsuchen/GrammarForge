@@ -4,6 +4,107 @@ protocol AIGradingService {
     func grade(answer: String, exercise: Exercise, skill: GrammarSkill) async -> GradingResult
 }
 
+struct BackendAIGradingService: AIGradingService {
+    private let baseURL: URL
+    private let session: URLSession
+
+    init(baseURL: URL = AppConfig.backendBaseURL, session: URLSession = .shared) {
+        self.baseURL = baseURL
+        self.session = session
+    }
+
+    func grade(answer: String, exercise: Exercise, skill: GrammarSkill) async -> GradingResult {
+        do {
+            var request = URLRequest(url: baseURL.appendingPathComponent("grade"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 30
+            request.httpBody = try JSONEncoder().encode(GradeRequest(
+                skillName: skill.name,
+                chineseSentence: exercise.chineseSentence,
+                referenceAnswer: exercise.referenceAnswer,
+                userAnswer: answer
+            ))
+
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                return fallbackResult(for: exercise, message: "后端批改服务暂时不可用，请稍后再试。")
+            }
+
+            let payload = try JSONDecoder().decode(GradeResponse.self, from: data)
+            return GradingResult(
+                isCorrect: payload.isCorrect,
+                score: payload.score,
+                correctedSentence: payload.correctedSentence,
+                errorTypes: payload.errorTypes,
+                explanationCN: payload.explanationCN,
+                betterVersion: payload.betterVersion,
+                similarQuestionCN: payload.similarQuestionCN
+            )
+        } catch {
+            return fallbackResult(for: exercise, message: "无法连接后端批改服务，请检查网络或后端地址。")
+        }
+    }
+
+    private func fallbackResult(for exercise: Exercise, message: String) -> GradingResult {
+        GradingResult(
+            isCorrect: false,
+            score: 0,
+            correctedSentence: exercise.referenceAnswer,
+            errorTypes: ["服务错误"],
+            explanationCN: message,
+            betterVersion: exercise.referenceAnswer,
+            similarQuestionCN: exercise.chineseSentence
+        )
+    }
+}
+
+enum AppConfig {
+    static var backendBaseURL: URL {
+        if let value = ProcessInfo.processInfo.environment["GRAMMARFORGE_BACKEND_URL"],
+           let url = URL(string: value) {
+            return url
+        }
+
+        return URL(string: "https://api.your-domain.com")!
+    }
+}
+
+private struct GradeRequest: Encodable {
+    let skillName: String
+    let chineseSentence: String
+    let referenceAnswer: String
+    let userAnswer: String
+
+    enum CodingKeys: String, CodingKey {
+        case skillName = "skill_name"
+        case chineseSentence = "chinese_sentence"
+        case referenceAnswer = "reference_answer"
+        case userAnswer = "user_answer"
+    }
+}
+
+private struct GradeResponse: Decodable {
+    let isCorrect: Bool
+    let score: Int
+    let correctedSentence: String
+    let errorTypes: [String]
+    let explanationCN: String
+    let betterVersion: String
+    let similarQuestionCN: String
+
+    enum CodingKeys: String, CodingKey {
+        case isCorrect = "is_correct"
+        case score
+        case correctedSentence = "corrected_sentence"
+        case errorTypes = "error_type"
+        case explanationCN = "explanation_cn"
+        case betterVersion = "better_version"
+        case similarQuestionCN = "similar_question_cn"
+    }
+}
+
 struct MockAIGradingService: AIGradingService {
     func grade(answer: String, exercise: Exercise, skill: GrammarSkill) async -> GradingResult {
         let normalizedAnswer = answer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

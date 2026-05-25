@@ -2,3 +2,7 @@ DerivedData/
 GrammarForge/DerivedData/
 *.xcuserstate
 xcuserdata/
+.env
+.env.*
+!.env.example
+GrammarForge/GrammarForge/LocalConfig.swift
