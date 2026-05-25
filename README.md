@@ -50,6 +50,8 @@ GrammarForge/
     ├── requirements.txt
     ├── Dockerfile
     └── .env.example
+├── render.yaml
+└── .do/app.yaml
 ```
 
 ## DeepSeek API
@@ -126,6 +128,24 @@ For production, deploy `backend/` and point your domain at it:
 
 ```text
 GRAMMARFORGE_BACKEND_URL=https://api.your-domain.com
+```
+
+## Deployment
+
+Two simple deployment paths are prepared:
+
+### Render
+
+Use `render.yaml` as a Blueprint. Set `DEEPSEEK_API_KEY` in Render's environment variables. The service root directory is `backend/`.
+
+### DigitalOcean App Platform
+
+Use `.do/app.yaml` after redeeming the GitHub Student Developer Pack DigitalOcean credit. In DigitalOcean, replace the placeholder secret with your real `DEEPSEEK_API_KEY`, then add your custom domain.
+
+For Aliyun DNS, create a CNAME record such as:
+
+```text
+api.your-domain.com -> your platform-provided domain
 ```
 
 ## Run
