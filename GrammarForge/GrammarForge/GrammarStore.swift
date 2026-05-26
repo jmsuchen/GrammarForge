@@ -9,15 +9,31 @@ final class GrammarStore: ObservableObject {
     @Published private var selectedExerciseID: UUID?
 
     private let gradingService: AIGradingService
+    private let storageKey = "grammarforge.learning_state.v1"
+    private let clearDataSettingsKey = "clear_learning_data"
 
     init(gradingService: AIGradingService = BackendAIGradingService()) {
-        let skills = GrammarSeed.make()
-        let initialSkillID = skills.first(where: { $0.status != .locked })?.id
-        self.skills = skills
-        self.exercises = []
-        self.selectedSkillID = initialSkillID
-        self.selectedExerciseID = nil
         self.gradingService = gradingService
+        if UserDefaults.standard.bool(forKey: clearDataSettingsKey) {
+            Self.clearPersistedState(storageKey: storageKey)
+            UserDefaults.standard.set(false, forKey: clearDataSettingsKey)
+        }
+
+        if let state = Self.loadState(storageKey: storageKey) {
+            self.skills = state.skills
+            self.exercises = state.exercises
+            self.submissions = state.submissions
+            self.selectedSkillID = state.selectedSkillID
+            self.selectedExerciseID = state.selectedExerciseID
+        } else {
+            let skills = GrammarSeed.make()
+            let initialSkillID = skills.first(where: { $0.status != .locked })?.id
+            self.skills = skills
+            self.exercises = []
+            self.selectedSkillID = initialSkillID
+            self.selectedExerciseID = nil
+            saveState()
+        }
     }
 
     var currentStage: String {
@@ -79,6 +95,7 @@ final class GrammarStore: ObservableObject {
     func select(_ skill: GrammarSkill) {
         selectedSkillID = skill.id
         selectedExerciseID = exercises.first { $0.skillID == skill.id }?.id
+        saveState()
     }
 
     func generateExercise(vocabularyLevel: VocabularyLevel) async {
@@ -86,6 +103,7 @@ final class GrammarStore: ObservableObject {
         let exercise = await gradingService.generateExercise(for: skill, vocabularyLevel: vocabularyLevel)
         exercises.insert(exercise, at: 0)
         selectedExerciseID = exercise.id
+        saveState()
     }
 
     func submitCurrentAnswer(_ answer: String, vocabularyLevel: VocabularyLevel) async {
@@ -104,6 +122,7 @@ final class GrammarStore: ObservableObject {
         if !result.isCorrect {
             addSimilarExercise(from: result, skillID: skill.id)
         }
+        saveState()
     }
 
     private func updateMastery(for skillID: UUID, wasCorrect: Bool) {
@@ -174,17 +193,46 @@ final class GrammarStore: ObservableObject {
         }
         return skill.mastery < 60 ? "掌握度偏低，适合继续输出训练。" : "近期仍有错误，适合做相似题巩固。"
     }
+
+    private func saveState() {
+        let state = LearningState(
+            skills: skills,
+            exercises: exercises,
+            submissions: submissions,
+            selectedSkillID: selectedSkillID,
+            selectedExerciseID: selectedExerciseID
+        )
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
+    }
+
+    private static func loadState(storageKey: String) -> LearningState? {
+        guard let data = UserDefaults.standard.data(forKey: storageKey) else { return nil }
+        return try? JSONDecoder().decode(LearningState.self, from: data)
+    }
+
+    private static func clearPersistedState(storageKey: String) {
+        UserDefaults.standard.removeObject(forKey: storageKey)
+    }
+}
+
+private struct LearningState: Codable {
+    let skills: [GrammarSkill]
+    let exercises: [Exercise]
+    let submissions: [Submission]
+    let selectedSkillID: UUID?
+    let selectedExerciseID: UUID?
 }
 
 enum GrammarSeed {
     static func make() -> [GrammarSkill] {
         [
-            GrammarSkill(id: UUID(), module: "句子骨架", name: "主谓宾结构", description: "写出结构完整、语序正确的简单句。", difficulty: 1, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .available),
-            GrammarSkill(id: UUID(), module: "时态系统", name: "现在完成时", description: "表达过去发生并影响现在的动作。", difficulty: 2, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
-            GrammarSkill(id: UUID(), module: "从句系统", name: "定语从句", description: "用从句补充说明名词，使表达更紧凑。", difficulty: 3, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
-            GrammarSkill(id: UUID(), module: "介词搭配", name: "时间介词", description: "稳定区分 in、on、at、for、since。", difficulty: 2, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
-            GrammarSkill(id: UUID(), module: "非谓语", name: "to do 作目的", description: "用不定式表达目的和意图。", difficulty: 3, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
-            GrammarSkill(id: UUID(), module: "表达升级", name: "因果表达", description: "用自然的连接方式说明原因和结果。", difficulty: 4, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked)
+            GrammarSkill(id: UUID(uuidString: "64E64625-7CB0-4E6D-9B48-7CC5F4E596F0")!, module: "句子骨架", name: "主谓宾结构", description: "写出结构完整、语序正确的简单句。", difficulty: 1, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .available),
+            GrammarSkill(id: UUID(uuidString: "B533F19D-5F79-40E6-9DC7-2BB2E3303FC7")!, module: "时态系统", name: "现在完成时", description: "表达过去发生并影响现在的动作。", difficulty: 2, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
+            GrammarSkill(id: UUID(uuidString: "7F8E6C0A-B777-4663-B4B8-730AB0333B64")!, module: "从句系统", name: "定语从句", description: "用从句补充说明名词，使表达更紧凑。", difficulty: 3, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
+            GrammarSkill(id: UUID(uuidString: "96C71F37-63DE-4C46-B35E-FDAB2EAE4BB8")!, module: "介词搭配", name: "时间介词", description: "稳定区分 in、on、at、for、since。", difficulty: 2, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
+            GrammarSkill(id: UUID(uuidString: "42B6C20F-E36A-4CE1-844A-80C1FDCBFF60")!, module: "非谓语", name: "to do 作目的", description: "用不定式表达目的和意图。", difficulty: 3, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
+            GrammarSkill(id: UUID(uuidString: "C8E9E84F-36C8-44DA-9DF0-09FF8B385965")!, module: "表达升级", name: "因果表达", description: "用自然的连接方式说明原因和结果。", difficulty: 4, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked)
         ]
     }
 }

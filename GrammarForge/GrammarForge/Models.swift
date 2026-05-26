@@ -1,6 +1,6 @@
 import Foundation
 
-enum SkillStatus: String, CaseIterable, Identifiable {
+enum SkillStatus: String, CaseIterable, Identifiable, Codable {
     case locked = "未解锁"
     case available = "可训练"
     case training = "训练中"
@@ -11,7 +11,7 @@ enum SkillStatus: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct GrammarSkill: Identifiable, Hashable {
+struct GrammarSkill: Identifiable, Hashable, Codable {
     let id: UUID
     let module: String
     let name: String
@@ -30,7 +30,7 @@ struct GrammarSkill: Identifiable, Hashable {
     }
 }
 
-struct Exercise: Identifiable, Hashable {
+struct Exercise: Identifiable, Hashable, Codable {
     let id: UUID
     let skillID: UUID
     let chineseSentence: String
@@ -38,7 +38,7 @@ struct Exercise: Identifiable, Hashable {
     let difficulty: Int
 }
 
-enum VocabularyLevel: String, CaseIterable, Identifiable {
+enum VocabularyLevel: String, CaseIterable, Identifiable, Codable {
     case middleSchool = "初中"
     case highSchool = "高中"
     case cet4 = "四级"
@@ -63,8 +63,8 @@ enum VocabularyLevel: String, CaseIterable, Identifiable {
     }
 }
 
-struct GradingResult: Identifiable, Hashable {
-    let id = UUID()
+struct GradingResult: Identifiable, Hashable, Codable {
+    var id = UUID()
     let isCorrect: Bool
     let score: Int
     let correctedSentence: String
@@ -74,7 +74,7 @@ struct GradingResult: Identifiable, Hashable {
     let similarQuestionCN: String
 }
 
-struct Submission: Identifiable, Hashable {
+struct Submission: Identifiable, Hashable, Codable {
     let id: UUID
     let exercise: Exercise
     let skillName: String

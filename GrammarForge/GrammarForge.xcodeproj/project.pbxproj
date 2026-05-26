@@ -19,6 +19,7 @@
 		A1000000000000000000000A /* ReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* ReportView.swift */; };
 		A1000000000000000000000B /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* Components.swift */; };
 		A1000000000000000000000C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* Assets.xcassets */; };
+		A1000000000000000000000D /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* Settings.bundle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +36,7 @@
 		A2000000000000000000000B /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		A2000000000000000000000C /* GrammarForge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GrammarForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000000000000000000000D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A2000000000000000000000E /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.plug-in; path = Settings.bundle; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +73,7 @@
 				A2000000000000000000000A /* ReportView.swift */,
 				A2000000000000000000000B /* Components.swift */,
 				A2000000000000000000000D /* Assets.xcassets */,
+				A2000000000000000000000E /* Settings.bundle */,
 			);
 			path = GrammarForge;
 			sourceTree = "<group>";
@@ -142,6 +145,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000000000000000000000C /* Assets.xcassets in Resources */,
+				A1000000000000000000000D /* Settings.bundle in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
