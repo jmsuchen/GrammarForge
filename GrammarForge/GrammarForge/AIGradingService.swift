@@ -1,7 +1,8 @@
 import Foundation
 
 protocol AIGradingService {
-    func grade(answer: String, exercise: Exercise, skill: GrammarSkill) async -> GradingResult
+    func generateExercise(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> Exercise
+    func grade(answer: String, exercise: Exercise, skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> GradingResult
 }
 
 struct BackendAIGradingService: AIGradingService {
@@ -13,7 +14,38 @@ struct BackendAIGradingService: AIGradingService {
         self.session = session
     }
 
-    func grade(answer: String, exercise: Exercise, skill: GrammarSkill) async -> GradingResult {
+    func generateExercise(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> Exercise {
+        do {
+            var request = URLRequest(url: baseURL.appendingPathComponent("generate-exercise"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 30
+            request.httpBody = try JSONEncoder().encode(GenerateExerciseRequest(
+                skillName: skill.name,
+                skillDescription: skill.description,
+                vocabularyLevel: vocabularyLevel.rawValue
+            ))
+
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                return fallbackExercise(for: skill, vocabularyLevel: vocabularyLevel)
+            }
+
+            let payload = try JSONDecoder().decode(GenerateExerciseResponse.self, from: data)
+            return Exercise(
+                id: UUID(),
+                skillID: skill.id,
+                chineseSentence: payload.chineseSentence,
+                referenceAnswer: payload.referenceAnswer,
+                difficulty: skill.difficulty
+            )
+        } catch {
+            return fallbackExercise(for: skill, vocabularyLevel: vocabularyLevel)
+        }
+    }
+
+    func grade(answer: String, exercise: Exercise, skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> GradingResult {
         do {
             var request = URLRequest(url: baseURL.appendingPathComponent("grade"))
             request.httpMethod = "POST"
@@ -23,7 +55,8 @@ struct BackendAIGradingService: AIGradingService {
                 skillName: skill.name,
                 chineseSentence: exercise.chineseSentence,
                 referenceAnswer: exercise.referenceAnswer,
-                userAnswer: answer
+                userAnswer: answer,
+                vocabularyLevel: vocabularyLevel.rawValue
             ))
 
             let (data, response) = try await session.data(for: request)
@@ -58,6 +91,16 @@ struct BackendAIGradingService: AIGradingService {
             similarQuestionCN: exercise.chineseSentence
         )
     }
+
+    private func fallbackExercise(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel) -> Exercise {
+        Exercise(
+            id: UUID(),
+            skillID: skill.id,
+            chineseSentence: "请用\(vocabularyLevel.rawValue)词汇难度造一个包含「\(skill.name)」的英文句子。",
+            referenceAnswer: "Please write an English sentence using the target grammar point.",
+            difficulty: skill.difficulty
+        )
+    }
 }
 
 enum AppConfig {
@@ -76,12 +119,36 @@ private struct GradeRequest: Encodable {
     let chineseSentence: String
     let referenceAnswer: String
     let userAnswer: String
+    let vocabularyLevel: String
 
     enum CodingKeys: String, CodingKey {
         case skillName = "skill_name"
         case chineseSentence = "chinese_sentence"
         case referenceAnswer = "reference_answer"
         case userAnswer = "user_answer"
+        case vocabularyLevel = "vocabulary_level"
+    }
+}
+
+private struct GenerateExerciseRequest: Encodable {
+    let skillName: String
+    let skillDescription: String
+    let vocabularyLevel: String
+
+    enum CodingKeys: String, CodingKey {
+        case skillName = "skill_name"
+        case skillDescription = "skill_description"
+        case vocabularyLevel = "vocabulary_level"
+    }
+}
+
+private struct GenerateExerciseResponse: Decodable {
+    let chineseSentence: String
+    let referenceAnswer: String
+
+    enum CodingKeys: String, CodingKey {
+        case chineseSentence = "chinese_sentence"
+        case referenceAnswer = "reference_answer"
     }
 }
 
@@ -106,7 +173,17 @@ private struct GradeResponse: Decodable {
 }
 
 struct MockAIGradingService: AIGradingService {
-    func grade(answer: String, exercise: Exercise, skill: GrammarSkill) async -> GradingResult {
+    func generateExercise(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> Exercise {
+        Exercise(
+            id: UUID(),
+            skillID: skill.id,
+            chineseSentence: nextSimilarQuestion(for: skill),
+            referenceAnswer: "I want to express this idea clearly.",
+            difficulty: skill.difficulty
+        )
+    }
+
+    func grade(answer: String, exercise: Exercise, skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> GradingResult {
         let normalizedAnswer = answer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let normalizedReference = exercise.referenceAnswer.lowercased()
         let isCorrect = normalizedAnswer == normalizedReference
@@ -118,8 +195,8 @@ struct MockAIGradingService: AIGradingService {
                 score: 92,
                 correctedSentence: exercise.referenceAnswer,
                 errorTypes: [],
-                explanationCN: "句子结构和目标语法点使用稳定，可以继续提高表达自然度。",
-                betterVersion: exercise.referenceAnswer,
+                explanationCN: "句子结构和目标语法点使用稳定，可以继续按\(vocabularyLevel.rawValue)词汇难度提高表达自然度。",
+                betterVersion: betterVersion(for: exercise, level: vocabularyLevel),
                 similarQuestionCN: nextSimilarQuestion(for: skill)
             )
         }
@@ -130,7 +207,7 @@ struct MockAIGradingService: AIGradingService {
             correctedSentence: exercise.referenceAnswer,
             errorTypes: errorTypes(for: skill),
             explanationCN: explanation(for: skill),
-            betterVersion: exercise.referenceAnswer,
+            betterVersion: betterVersion(for: exercise, level: vocabularyLevel),
             similarQuestionCN: nextSimilarQuestion(for: skill)
         )
     }
@@ -186,6 +263,17 @@ struct MockAIGradingService: AIGradingService {
             return "他早起是为了赶第一班车。"
         default:
             return "我想用更清楚的方式表达这个观点。"
+        }
+    }
+
+    private func betterVersion(for exercise: Exercise, level: VocabularyLevel) -> String {
+        switch level {
+        case .middleSchool, .highSchool, .cet4:
+            return exercise.referenceAnswer
+        case .cet6:
+            return "\(exercise.referenceAnswer) This version keeps the meaning clear and concise."
+        case .ielts:
+            return "\(exercise.referenceAnswer) This version is suitable for a more natural IELTS-style response."
         }
     }
 }

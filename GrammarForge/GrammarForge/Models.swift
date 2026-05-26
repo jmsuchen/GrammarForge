@@ -38,6 +38,31 @@ struct Exercise: Identifiable, Hashable {
     let difficulty: Int
 }
 
+enum VocabularyLevel: String, CaseIterable, Identifiable {
+    case middleSchool = "初中"
+    case highSchool = "高中"
+    case cet4 = "四级"
+    case cet6 = "六级"
+    case ielts = "雅思"
+
+    var id: String { rawValue }
+
+    var promptDescription: String {
+        switch self {
+        case .middleSchool:
+            return "初中核心词汇，句子尽量简洁"
+        case .highSchool:
+            return "高中常用词汇，表达自然但不过度复杂"
+        case .cet4:
+            return "大学英语四级词汇，适合基础大学英语输出"
+        case .cet6:
+            return "大学英语六级词汇，允许更精准的抽象表达"
+        case .ielts:
+            return "雅思写作/口语常用词汇，表达更地道但不要堆砌生词"
+        }
+    }
+}
+
 struct GradingResult: Identifiable, Hashable {
     let id = UUID()
     let isCorrect: Bool

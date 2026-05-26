@@ -14,7 +14,7 @@ struct ReportView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    MetricCard(title: "已完成句子", value: "\(max(store.submissions.count, 86))", systemImage: "checklist")
+                    MetricCard(title: "已完成句子", value: "\(store.submissions.count)", systemImage: "checklist")
                     MetricCard(title: "整体正确率", value: "\(Int(store.overallAccuracy * 100))%", systemImage: "chart.line.uptrend.xyaxis")
                 }
 
@@ -31,7 +31,7 @@ struct ReportView: View {
         let mastered = store.skills
             .filter { $0.mastery >= 80 }
             .map { "\($0.name) 使用更稳定。" }
-        return mastered.isEmpty ? ["主谓宾结构更稳定。", "能开始主动检查句子结构。"] : mastered
+        return mastered.isEmpty ? ["完成训练后生成。"] : mastered
     }
 
     private var nextSteps: [String] {

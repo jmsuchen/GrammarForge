@@ -6,14 +6,17 @@ final class GrammarStore: ObservableObject {
     @Published private(set) var exercises: [Exercise]
     @Published private(set) var submissions: [Submission] = []
     @Published var selectedSkillID: UUID?
+    @Published private var selectedExerciseID: UUID?
 
     private let gradingService: AIGradingService
 
     init(gradingService: AIGradingService = BackendAIGradingService()) {
-        let seed = GrammarSeed.make()
-        self.skills = seed.skills
-        self.exercises = seed.exercises
-        self.selectedSkillID = seed.skills.first(where: { $0.status != .locked })?.id
+        let skills = GrammarSeed.make()
+        let initialSkillID = skills.first(where: { $0.status != .locked })?.id
+        self.skills = skills
+        self.exercises = []
+        self.selectedSkillID = initialSkillID
+        self.selectedExerciseID = nil
         self.gradingService = gradingService
     }
 
@@ -36,6 +39,10 @@ final class GrammarStore: ObservableObject {
 
     var currentExercise: Exercise? {
         guard let selectedSkillID else { return nil }
+        if let selectedExerciseID,
+           let selectedExercise = exercises.first(where: { $0.id == selectedExerciseID && $0.skillID == selectedSkillID }) {
+            return selectedExercise
+        }
         return exercises.first { $0.skillID == selectedSkillID }
     }
 
@@ -47,7 +54,7 @@ final class GrammarStore: ObservableObject {
             .map { skill in
                 SkillRecommendation(
                     skill: skill,
-                    reason: skill.mastery < 60 ? "掌握度偏低，适合继续输出训练。" : "近期仍有错误，适合做相似题巩固。"
+                    reason: recommendationReason(for: skill)
                 )
             }
     }
@@ -55,7 +62,7 @@ final class GrammarStore: ObservableObject {
     var weakPoints: [String] {
         let recentErrors = submissions.flatMap { $0.result.errorTypes }
         if recentErrors.isEmpty {
-            return ["时态准确性", "从句连接", "介词使用"]
+            return ["完成首次训练后生成"]
         }
         return Array(Dictionary(grouping: recentErrors, by: { $0 })
             .sorted { $0.value.count > $1.value.count }
@@ -64,18 +71,26 @@ final class GrammarStore: ObservableObject {
     }
 
     var overallAccuracy: Double {
-        guard !submissions.isEmpty else { return 0.74 }
+        guard !submissions.isEmpty else { return 0 }
         let correct = submissions.filter { $0.result.isCorrect }.count
         return Double(correct) / Double(submissions.count)
     }
 
     func select(_ skill: GrammarSkill) {
         selectedSkillID = skill.id
+        selectedExerciseID = exercises.first { $0.skillID == skill.id }?.id
     }
 
-    func submitCurrentAnswer(_ answer: String) async {
+    func generateExercise(vocabularyLevel: VocabularyLevel) async {
+        guard let skill = selectedSkill else { return }
+        let exercise = await gradingService.generateExercise(for: skill, vocabularyLevel: vocabularyLevel)
+        exercises.insert(exercise, at: 0)
+        selectedExerciseID = exercise.id
+    }
+
+    func submitCurrentAnswer(_ answer: String, vocabularyLevel: VocabularyLevel) async {
         guard let skill = selectedSkill, let exercise = currentExercise else { return }
-        let result = await gradingService.grade(answer: answer, exercise: exercise, skill: skill)
+        let result = await gradingService.grade(answer: answer, exercise: exercise, skill: skill, vocabularyLevel: vocabularyLevel)
         let submission = Submission(
             id: UUID(),
             exercise: exercise,
@@ -145,32 +160,31 @@ final class GrammarStore: ObservableObject {
     }
 
     private func recommendationScore(for skill: GrammarSkill) -> Double {
+        guard skill.totalAttempts > 0 else {
+            return skill.status == .available ? 10 - Double(skill.difficulty) : 0
+        }
         let errorCount = Double(max(skill.totalAttempts - skill.correctAttempts, 0))
         let recentPenalty = skill.recentResults.suffix(3).filter { !$0 }.count
         return errorCount + Double(recentPenalty) * 1.5 + Double(skill.difficulty) - skill.mastery / 100
     }
+
+    private func recommendationReason(for skill: GrammarSkill) -> String {
+        if skill.totalAttempts == 0 {
+            return "从这里开始完成第一组中译英训练。"
+        }
+        return skill.mastery < 60 ? "掌握度偏低，适合继续输出训练。" : "近期仍有错误，适合做相似题巩固。"
+    }
 }
 
 enum GrammarSeed {
-    static func make() -> (skills: [GrammarSkill], exercises: [Exercise]) {
-        let skills = [
-            GrammarSkill(id: UUID(), module: "句子骨架", name: "主谓宾结构", description: "写出结构完整、语序正确的简单句。", difficulty: 1, mastery: 91, totalAttempts: 12, correctAttempts: 11, repeatErrorCount: 1, recentResults: [true, true, true, true, true], status: .proficient),
-            GrammarSkill(id: UUID(), module: "时态系统", name: "现在完成时", description: "表达过去发生并影响现在的动作。", difficulty: 2, mastery: 64, totalAttempts: 8, correctAttempts: 5, repeatErrorCount: 3, recentResults: [false, true, false, true, true], status: .training),
-            GrammarSkill(id: UUID(), module: "从句系统", name: "定语从句", description: "用从句补充说明名词，使表达更紧凑。", difficulty: 3, mastery: 52, totalAttempts: 6, correctAttempts: 3, repeatErrorCount: 3, recentResults: [false, false, true, true, false], status: .training),
-            GrammarSkill(id: UUID(), module: "介词搭配", name: "时间介词", description: "稳定区分 in、on、at、for、since。", difficulty: 2, mastery: 48, totalAttempts: 5, correctAttempts: 2, repeatErrorCount: 3, recentResults: [false, true, false, false, true], status: .review),
+    static func make() -> [GrammarSkill] {
+        [
+            GrammarSkill(id: UUID(), module: "句子骨架", name: "主谓宾结构", description: "写出结构完整、语序正确的简单句。", difficulty: 1, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .available),
+            GrammarSkill(id: UUID(), module: "时态系统", name: "现在完成时", description: "表达过去发生并影响现在的动作。", difficulty: 2, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
+            GrammarSkill(id: UUID(), module: "从句系统", name: "定语从句", description: "用从句补充说明名词，使表达更紧凑。", difficulty: 3, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
+            GrammarSkill(id: UUID(), module: "介词搭配", name: "时间介词", description: "稳定区分 in、on、at、for、since。", difficulty: 2, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
             GrammarSkill(id: UUID(), module: "非谓语", name: "to do 作目的", description: "用不定式表达目的和意图。", difficulty: 3, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked),
             GrammarSkill(id: UUID(), module: "表达升级", name: "因果表达", description: "用自然的连接方式说明原因和结果。", difficulty: 4, mastery: 0, totalAttempts: 0, correctAttempts: 0, repeatErrorCount: 0, recentResults: [], status: .locked)
         ]
-
-        let exercises = [
-            Exercise(id: UUID(), skillID: skills[0].id, chineseSentence: "我每天阅读英文文章。", referenceAnswer: "I read English articles every day.", difficulty: 1),
-            Exercise(id: UUID(), skillID: skills[1].id, chineseSentence: "我已经学习英语三个月了。", referenceAnswer: "I have been learning English for three months.", difficulty: 2),
-            Exercise(id: UUID(), skillID: skills[2].id, chineseSentence: "这是我昨天买的那本书。", referenceAnswer: "This is the book that I bought yesterday.", difficulty: 3),
-            Exercise(id: UUID(), skillID: skills[3].id, chineseSentence: "他从 2020 年起就住在上海。", referenceAnswer: "He has lived in Shanghai since 2020.", difficulty: 2),
-            Exercise(id: UUID(), skillID: skills[4].id, chineseSentence: "我学习英语是为了出国交流。", referenceAnswer: "I study English to communicate abroad.", difficulty: 3),
-            Exercise(id: UUID(), skillID: skills[5].id, chineseSentence: "因为下雨，比赛被推迟了。", referenceAnswer: "The match was postponed because it rained.", difficulty: 4)
-        ]
-
-        return (skills, exercises)
     }
 }

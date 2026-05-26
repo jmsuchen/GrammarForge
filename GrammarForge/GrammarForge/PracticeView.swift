@@ -3,13 +3,18 @@ import SwiftUI
 struct PracticeView: View {
     @EnvironmentObject private var store: GrammarStore
     @State private var answer = ""
+    @State private var isGeneratingExercise = false
     @State private var isSubmitting = false
-    @State private var latestResult: GradingResult?
+    @State private var latestSubmission: Submission?
+    @State private var vocabularyLevel: VocabularyLevel = .cet4
+    @State private var isExerciseStarted = false
+    @State private var generationToken: UUID?
+    @FocusState private var isAnswerFocused: Bool
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if let skill = store.selectedSkill, let exercise = store.currentExercise {
+                if let skill = store.selectedSkill {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(skill.name)
                             .font(.largeTitle.bold())
@@ -17,48 +22,117 @@ struct PracticeView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("中文句子", systemImage: "text.quote")
+                    if !isExerciseStarted {
+                        Text("造句词汇难度")
                             .font(.headline)
-                        Text(exercise.chineseSentence)
-                            .font(.title3.weight(.semibold))
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("请输入英文")
-                            .font(.headline)
-                        TextEditor(text: $answer)
-                            .frame(minHeight: 130)
-                            .padding(8)
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(.quaternary)
+                        Picker("造句词汇难度", selection: $vocabularyLevel) {
+                            ForEach(VocabularyLevel.allCases) { level in
+                                Text(level.rawValue).tag(level)
                             }
-                    }
-
-                    Button {
-                        submit()
-                    } label: {
-                        HStack {
-                            if isSubmitting {
-                                ProgressView()
-                            }
-                            Label(isSubmitting ? "批改中" : "提交批改", systemImage: "paperplane.fill")
                         }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+                        .pickerStyle(.segmented)
+                        Text(vocabularyLevel.promptDescription)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
 
-                    if let latestResult {
-                        ResultView(result: latestResult)
+                        Button {
+                            startExercise()
+                        } label: {
+                            HStack {
+                                if isGeneratingExercise {
+                                    ProgressView()
+                                }
+                                Label(isGeneratingExercise ? "出题中" : "开始出题", systemImage: "play.fill")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(isGeneratingExercise)
+                    } else if let exercise = store.currentExercise {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Label(vocabularyLevel.rawValue, systemImage: "slider.horizontal.3")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Button("重新选难度") {
+                                    resetToLevelSelection()
+                                }
+                                .font(.subheadline.weight(.medium))
+                            }
+                            Text(vocabularyLevel.promptDescription)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("中文句子", systemImage: "text.quote")
+                                .font(.headline)
+                            Text(exercise.chineseSentence)
+                                .font(.title3.weight(.semibold))
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("请输入英文")
+                                .font(.headline)
+                            TextEditor(text: $answer)
+                                .focused($isAnswerFocused)
+                                .frame(minHeight: 130)
+                                .padding(8)
+                                .background(Color(.secondarySystemBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(.quaternary)
+                                }
+                        }
+
+                        Button {
+                            submit()
+                        } label: {
+                            HStack {
+                                if isSubmitting {
+                                    ProgressView()
+                                }
+                                Label(isSubmitting ? "批改中" : "提交批改", systemImage: "paperplane.fill")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting || latestSubmission != nil)
+
+                        if let latestSubmission {
+                            ResultView(submission: latestSubmission)
+
+                            HStack(spacing: 12) {
+                                Button {
+                                    resetToLevelSelection()
+                                } label: {
+                                    Label("重新选难度", systemImage: "slider.horizontal.3")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button {
+                                    nextExercise()
+                                } label: {
+                                    HStack {
+                                        if isGeneratingExercise {
+                                            ProgressView()
+                                        }
+                                        Label(isGeneratingExercise ? "出题中" : "下一题", systemImage: "arrow.right.circle.fill")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(isGeneratingExercise)
+                            }
+                        }
                     }
                 } else {
                     EmptyStateView(title: "暂无可训练语法点", subtitle: "请先在能力树中选择一个已解锁的语法点。", systemImage: "lock")
@@ -67,23 +141,80 @@ struct PracticeView: View {
             .padding()
         }
         .navigationTitle("中译英训练")
+        .onChange(of: store.selectedSkillID) { _, _ in
+            resetToLevelSelection()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") {
+                    isAnswerFocused = false
+                }
+            }
+        }
+    }
+
+    private func startExercise() {
+        guard !isGeneratingExercise else { return }
+        answer = ""
+        latestSubmission = nil
+        isGeneratingExercise = true
+        let token = UUID()
+        generationToken = token
+        Task {
+            await store.generateExercise(vocabularyLevel: vocabularyLevel)
+            guard generationToken == token else { return }
+            isGeneratingExercise = false
+            isExerciseStarted = true
+        }
     }
 
     private func submit() {
+        isAnswerFocused = false
         isSubmitting = true
-        latestResult = nil
+        latestSubmission = nil
         let submittedAnswer = answer
+        let selectedVocabularyLevel = vocabularyLevel
         Task {
-            await store.submitCurrentAnswer(submittedAnswer)
-            latestResult = store.submissions.first?.result
+            await store.submitCurrentAnswer(submittedAnswer, vocabularyLevel: selectedVocabularyLevel)
+            latestSubmission = store.submissions.first
             answer = ""
             isSubmitting = false
         }
     }
+
+    private func nextExercise() {
+        guard !isGeneratingExercise else { return }
+        isAnswerFocused = false
+        answer = ""
+        latestSubmission = nil
+        isGeneratingExercise = true
+        let token = UUID()
+        generationToken = token
+        Task {
+            await store.generateExercise(vocabularyLevel: vocabularyLevel)
+            guard generationToken == token else { return }
+            isGeneratingExercise = false
+        }
+    }
+
+    private func resetToLevelSelection() {
+        isAnswerFocused = false
+        answer = ""
+        latestSubmission = nil
+        isSubmitting = false
+        isGeneratingExercise = false
+        generationToken = nil
+        isExerciseStarted = false
+    }
 }
 
 private struct ResultView: View {
-    let result: GradingResult
+    let submission: Submission
+
+    private var result: GradingResult {
+        submission.result
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -99,9 +230,22 @@ private struct ResultView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
+                Text("你的输入")
+                    .font(.subheadline.weight(.semibold))
+                Text(submission.userAnswer)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
                 Text("推荐答案")
                     .font(.subheadline.weight(.semibold))
                 Text(result.correctedSentence)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("推荐句式")
+                    .font(.subheadline.weight(.semibold))
+                Text(result.betterVersion)
             }
 
             VStack(alignment: .leading, spacing: 6) {
