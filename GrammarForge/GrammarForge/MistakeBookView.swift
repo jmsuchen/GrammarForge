@@ -72,16 +72,32 @@ private struct MistakeGroupView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(submission.exercise.chineseSentence)
                     .font(.headline)
-                Text("你的答案：\(submission.userAnswer)")
-                    .foregroundStyle(.secondary)
-                Text("推荐答案：\(submission.result.correctedSentence)")
-                    .foregroundStyle(.secondary)
-                Text(submission.result.explanationCN)
-                    .font(.subheadline)
+                    .textSelection(.enabled)
+                SelectableMistakeText(title: "你的答案", value: submission.userAnswer)
+                SelectableMistakeText(title: "推荐答案", value: submission.result.correctedSentence)
+                SelectableMistakeText(title: "推荐句式", value: submission.result.betterVersion)
+                SelectableMistakeText(title: "中文解释", value: submission.result.explanationCN)
             }
             .padding(.vertical, 6)
         }
         .navigationTitle(title)
+    }
+}
+
+private struct SelectableMistakeText: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+        }
     }
 }
 
