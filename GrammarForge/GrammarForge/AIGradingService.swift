@@ -1,7 +1,7 @@
 import Foundation
 
 protocol AIGradingService {
-    func generateExercise(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> Exercise
+    func generateExerciseSet(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel, count: Int) async -> [Exercise]
     func grade(answer: String, exercise: Exercise, skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> GradingResult
 }
 
@@ -14,34 +14,38 @@ struct BackendAIGradingService: AIGradingService {
         self.session = session
     }
 
-    func generateExercise(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> Exercise {
+    func generateExerciseSet(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel, count: Int) async -> [Exercise] {
         do {
-            var request = URLRequest(url: baseURL.appendingPathComponent("generate-exercise"))
+            var request = URLRequest(url: baseURL.appendingPathComponent("generate-exercise-set"))
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = 30
             request.httpBody = try JSONEncoder().encode(GenerateExerciseRequest(
                 skillName: skill.name,
                 skillDescription: skill.description,
-                vocabularyLevel: vocabularyLevel.rawValue
+                vocabularyLevel: vocabularyLevel.rawValue,
+                count: count
             ))
 
             let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode) else {
-                return fallbackExercise(for: skill, vocabularyLevel: vocabularyLevel)
+                return fallbackExercises(for: skill, vocabularyLevel: vocabularyLevel, count: count)
             }
 
             let payload = try JSONDecoder().decode(GenerateExerciseResponse.self, from: data)
-            return Exercise(
-                id: UUID(),
-                skillID: skill.id,
-                chineseSentence: payload.chineseSentence,
-                referenceAnswer: payload.referenceAnswer,
-                difficulty: skill.difficulty
-            )
+            let exercises = payload.exercises.prefix(count).map { item in
+                Exercise(
+                    id: UUID(),
+                    skillID: skill.id,
+                    chineseSentence: item.chineseSentence,
+                    referenceAnswer: item.referenceAnswer,
+                    difficulty: skill.difficulty
+                )
+            }
+            return exercises.isEmpty ? fallbackExercises(for: skill, vocabularyLevel: vocabularyLevel, count: count) : exercises
         } catch {
-            return fallbackExercise(for: skill, vocabularyLevel: vocabularyLevel)
+            return fallbackExercises(for: skill, vocabularyLevel: vocabularyLevel, count: count)
         }
     }
 
@@ -92,14 +96,16 @@ struct BackendAIGradingService: AIGradingService {
         )
     }
 
-    private func fallbackExercise(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel) -> Exercise {
-        Exercise(
-            id: UUID(),
-            skillID: skill.id,
-            chineseSentence: "请用\(vocabularyLevel.rawValue)词汇难度造一个包含「\(skill.name)」的英文句子。",
-            referenceAnswer: "Please write an English sentence using the target grammar point.",
-            difficulty: skill.difficulty
-        )
+    private func fallbackExercises(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel, count: Int) -> [Exercise] {
+        (1...max(count, 1)).map { index in
+            Exercise(
+                id: UUID(),
+                skillID: skill.id,
+                chineseSentence: "请用\(vocabularyLevel.rawValue)词汇难度写出第 \(index) 个包含「\(skill.name)」的英文句子。",
+                referenceAnswer: "Please write an English sentence using the target grammar point.",
+                difficulty: skill.difficulty
+            )
+        }
     }
 }
 
@@ -134,15 +140,21 @@ private struct GenerateExerciseRequest: Encodable {
     let skillName: String
     let skillDescription: String
     let vocabularyLevel: String
+    let count: Int
 
     enum CodingKeys: String, CodingKey {
         case skillName = "skill_name"
         case skillDescription = "skill_description"
         case vocabularyLevel = "vocabulary_level"
+        case count
     }
 }
 
 private struct GenerateExerciseResponse: Decodable {
+    let exercises: [GeneratedExercise]
+}
+
+private struct GeneratedExercise: Decodable {
     let chineseSentence: String
     let referenceAnswer: String
 
@@ -173,14 +185,16 @@ private struct GradeResponse: Decodable {
 }
 
 struct MockAIGradingService: AIGradingService {
-    func generateExercise(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> Exercise {
-        Exercise(
-            id: UUID(),
-            skillID: skill.id,
-            chineseSentence: nextSimilarQuestion(for: skill),
-            referenceAnswer: "I want to express this idea clearly.",
-            difficulty: skill.difficulty
-        )
+    func generateExerciseSet(for skill: GrammarSkill, vocabularyLevel: VocabularyLevel, count: Int) async -> [Exercise] {
+        (1...max(count, 1)).map { index in
+            Exercise(
+                id: UUID(),
+                skillID: skill.id,
+                chineseSentence: "\(nextSimilarQuestion(for: skill))（第 \(index) 题，\(vocabularyLevel.rawValue)）",
+                referenceAnswer: "I want to express this idea clearly.",
+                difficulty: skill.difficulty
+            )
+        }
     }
 
     func grade(answer: String, exercise: Exercise, skill: GrammarSkill, vocabularyLevel: VocabularyLevel) async -> GradingResult {

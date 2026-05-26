@@ -42,7 +42,7 @@ struct PracticeView: View {
                                 if isGeneratingExercise {
                                     ProgressView()
                                 }
-                                Label(isGeneratingExercise ? "出题中" : "开始出题", systemImage: "play.fill")
+                                Label(isGeneratingExercise ? "生成 10 题中" : "开始一组 10 题", systemImage: "play.fill")
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -55,6 +55,9 @@ struct PracticeView: View {
                                 Label(vocabularyLevel.rawValue, systemImage: "slider.horizontal.3")
                                     .font(.subheadline.weight(.semibold))
                                 Spacer()
+                                Text(store.exerciseSetProgressText)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
                                 Button("重新选难度") {
                                     resetToLevelSelection()
                                 }
@@ -125,7 +128,7 @@ struct PracticeView: View {
                                         if isGeneratingExercise {
                                             ProgressView()
                                         }
-                                        Label(isGeneratingExercise ? "出题中" : "下一题", systemImage: "arrow.right.circle.fill")
+                                        Label(nextButtonTitle, systemImage: "arrow.right.circle.fill")
                                     }
                                     .frame(maxWidth: .infinity)
                                 }
@@ -162,7 +165,7 @@ struct PracticeView: View {
         let token = UUID()
         generationToken = token
         Task {
-            await store.generateExercise(vocabularyLevel: vocabularyLevel)
+            await store.generateExerciseSet(vocabularyLevel: vocabularyLevel)
             guard generationToken == token else { return }
             isGeneratingExercise = false
             isExerciseStarted = true
@@ -188,13 +191,10 @@ struct PracticeView: View {
         isAnswerFocused = false
         answer = ""
         latestSubmission = nil
-        isGeneratingExercise = true
-        let token = UUID()
-        generationToken = token
-        Task {
-            await store.generateExercise(vocabularyLevel: vocabularyLevel)
-            guard generationToken == token else { return }
-            isGeneratingExercise = false
+        if store.hasNextExerciseInSet {
+            store.moveToNextExerciseInSet()
+        } else {
+            resetToLevelSelection()
         }
     }
 
@@ -206,6 +206,15 @@ struct PracticeView: View {
         isGeneratingExercise = false
         generationToken = nil
         isExerciseStarted = false
+    }
+}
+
+private extension PracticeView {
+    var nextButtonTitle: String {
+        if isGeneratingExercise {
+            return "生成 10 题中"
+        }
+        return store.hasNextExerciseInSet ? "下一题" : "完成本组"
     }
 }
 

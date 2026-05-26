@@ -9,11 +9,9 @@ struct SkillTreeView: View {
                 Section(section.module) {
                     ForEach(section.skills) { skill in
                         Button {
-                            guard skill.status != .locked else { return }
                             store.select(skill)
                         } label: {
                             SkillRow(skill: skill, isSelected: store.selectedSkillID == skill.id)
-                                .opacity(skill.status == .locked ? 0.55 : 1)
                         }
                         .buttonStyle(.plain)
                     }
@@ -25,9 +23,15 @@ struct SkillTreeView: View {
     }
 
     private var groupedModules: [(module: String, skills: [GrammarSkill])] {
-        Dictionary(grouping: store.skills, by: \.module)
-            .map { ($0.key, $0.value) }
-            .sorted { $0.module < $1.module }
+        var sections: [(module: String, skills: [GrammarSkill])] = []
+        for skill in store.skills {
+            if let index = sections.firstIndex(where: { $0.module == skill.module }) {
+                sections[index].skills.append(skill)
+            } else {
+                sections.append((module: skill.module, skills: [skill]))
+            }
+        }
+        return sections
     }
 }
 

@@ -41,9 +41,19 @@ class GenerateExerciseRequest(BaseModel):
     skill_name: str = Field(min_length=1)
     skill_description: str = Field(min_length=1)
     vocabulary_level: str = Field(default="四级", min_length=1)
+    count: int = Field(default=10, ge=1, le=20)
+
+
+class GeneratedExercise(BaseModel):
+    chinese_sentence: str = Field(min_length=1)
+    reference_answer: str = Field(min_length=1)
 
 
 class GenerateExerciseResponse(BaseModel):
+    exercises: list[GeneratedExercise]
+
+
+class SingleExerciseResponse(BaseModel):
     chinese_sentence: str = Field(min_length=1)
     reference_answer: str = Field(min_length=1)
 
@@ -63,8 +73,26 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/generate-exercise", response_model=GenerateExerciseResponse)
-async def generate_exercise(request: GenerateExerciseRequest) -> GenerateExerciseResponse:
+@app.post("/generate-exercise", response_model=SingleExerciseResponse)
+async def generate_exercise(request: GenerateExerciseRequest) -> SingleExerciseResponse:
+    single_request = GenerateExerciseRequest(
+        skill_name=request.skill_name,
+        skill_description=request.skill_description,
+        vocabulary_level=request.vocabulary_level,
+        count=1,
+    )
+    response = await generate_exercise_set(single_request)
+    if not response.exercises:
+        raise HTTPException(status_code=502, detail="DeepSeek returned no exercise")
+    exercise = response.exercises[0]
+    return SingleExerciseResponse(
+        chinese_sentence=exercise.chinese_sentence,
+        reference_answer=exercise.reference_answer,
+    )
+
+
+@app.post("/generate-exercise-set", response_model=GenerateExerciseResponse)
+async def generate_exercise_set(request: GenerateExerciseRequest) -> GenerateExerciseResponse:
     if not DEEPSEEK_API_KEY:
         raise HTTPException(status_code=500, detail="DEEPSEEK_API_KEY is not configured")
 
@@ -200,15 +228,17 @@ def build_prompt(request: GradeRequest) -> str:
 
 def build_generate_prompt(request: GenerateExerciseRequest) -> str:
     return f"""
-请生成一道中译英练习题。
+请生成 {request.count} 道中译英练习题，组成一组连续训练。
 
 要求：
-1. 题目必须训练指定语法点。
-2. 中文句子自然、具体，不要像模板句。
-3. 句子长度和用词难度必须匹配指定词汇难度。
-4. reference_answer 必须是对应中文句子的自然英文参考答案。
-5. 每次尽量生成不同场景，不要重复常见固定句。
-6. 只返回 JSON，不要输出多余文字。
+1. 全部题目都必须训练指定语法点，不能跑题。
+2. 这一组题要有针对性：先从核心结构开始，再逐步加入常见干扰点。
+3. 每道题的中文句子都要自然、具体、有生活或学习场景，不要像模板句。
+4. {request.count} 道题不能重复场景、不能只替换一两个词。
+5. 句子长度、词汇和 reference_answer 必须匹配指定词汇难度。
+6. reference_answer 必须是对应中文句子的自然英文参考答案。
+7. 不要生成选择题、填空题或解释，只生成中译英题目。
+8. 只返回 JSON，不要输出多余文字。
 
 语法点：{request.skill_name}
 语法点说明：{request.skill_description}
@@ -216,8 +246,12 @@ def build_generate_prompt(request: GenerateExerciseRequest) -> str:
 
 返回格式：
 {{
-  "chinese_sentence": "",
-  "reference_answer": ""
+  "exercises": [
+    {{
+      "chinese_sentence": "",
+      "reference_answer": ""
+    }}
+  ]
 }}
 """.strip()
 
