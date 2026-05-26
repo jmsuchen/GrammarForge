@@ -9,10 +9,14 @@ final class GrammarStore: ObservableObject {
     @Published private var selectedExerciseID: UUID?
     @Published private var activeExerciseIDs: [UUID] = []
     @Published private var activeExerciseIndex = 0
+    @Published private(set) var draftAnswer = ""
+    @Published private(set) var activeVocabularyLevel: VocabularyLevel = .cet4
+    @Published private(set) var shouldShowDailyEncouragement = false
 
     private let gradingService: AIGradingService
     private let exerciseSetSize = 10
-    private let storageKey = "grammarforge.learning_state.v3"
+    private let dailyPracticeGoalSeconds = 20 * 60
+    private let storageKey = "grammarforge.learning_state.v4"
     private let clearDataSettingsKey = "clear_learning_data"
 
     init(gradingService: AIGradingService = BackendAIGradingService()) {
@@ -30,6 +34,12 @@ final class GrammarStore: ObservableObject {
             self.selectedExerciseID = state.selectedExerciseID
             self.activeExerciseIDs = state.activeExerciseIDs
             self.activeExerciseIndex = state.activeExerciseIndex
+            self.draftAnswer = state.draftAnswer
+            self.activeVocabularyLevel = state.activeVocabularyLevel
+            self.dailyPracticeDate = state.dailyPracticeDate
+            self.dailyPracticeSeconds = state.dailyPracticeSeconds
+            self.didShowDailyEncouragement = state.didShowDailyEncouragement
+            resetDailyPracticeIfNeeded()
         } else {
             let skills = GrammarSeed.make()
             let initialSkillID = skills.first(where: { $0.status != .locked })?.id
@@ -39,9 +49,18 @@ final class GrammarStore: ObservableObject {
             self.selectedExerciseID = nil
             self.activeExerciseIDs = []
             self.activeExerciseIndex = 0
+            self.draftAnswer = ""
+            self.activeVocabularyLevel = .cet4
+            self.dailyPracticeDate = Self.todayKey()
+            self.dailyPracticeSeconds = 0
+            self.didShowDailyEncouragement = false
             saveState()
         }
     }
+
+    private var dailyPracticeDate: String
+    private var dailyPracticeSeconds: Int
+    private var didShowDailyEncouragement: Bool
 
     var currentStage: String {
         let average = skills.map(\.mastery).reduce(0, +) / Double(max(skills.count, 1))
@@ -76,6 +95,15 @@ final class GrammarStore: ObservableObject {
 
     var hasNextExerciseInSet: Bool {
         activeExerciseIndex + 1 < activeExerciseIDs.count
+    }
+
+    var hasActiveExerciseSet: Bool {
+        !activeExerciseIDs.isEmpty && currentExercise != nil
+    }
+
+    var latestSubmissionForCurrentExercise: Submission? {
+        guard let currentExercise else { return nil }
+        return submissions.first { $0.exercise.id == currentExercise.id }
     }
 
     var recommendations: [SkillRecommendation] {
@@ -113,6 +141,7 @@ final class GrammarStore: ObservableObject {
         selectedExerciseID = exercises.first { $0.skillID == skill.id }?.id
         activeExerciseIDs = []
         activeExerciseIndex = 0
+        draftAnswer = ""
         saveState()
     }
 
@@ -123,6 +152,8 @@ final class GrammarStore: ObservableObject {
         activeExerciseIDs = generatedExercises.map(\.id)
         activeExerciseIndex = 0
         selectedExerciseID = activeExerciseIDs.first
+        activeVocabularyLevel = vocabularyLevel
+        draftAnswer = ""
         saveState()
     }
 
@@ -130,7 +161,36 @@ final class GrammarStore: ObservableObject {
         guard hasNextExerciseInSet else { return }
         activeExerciseIndex += 1
         selectedExerciseID = activeExerciseIDs[activeExerciseIndex]
+        draftAnswer = ""
         saveState()
+    }
+
+    func clearActiveExerciseSet() {
+        activeExerciseIDs = []
+        activeExerciseIndex = 0
+        selectedExerciseID = nil
+        draftAnswer = ""
+        saveState()
+    }
+
+    func updateDraftAnswer(_ answer: String) {
+        draftAnswer = answer
+        saveState()
+    }
+
+    func recordPracticeSecond() {
+        resetDailyPracticeIfNeeded()
+        guard !didShowDailyEncouragement else { return }
+        dailyPracticeSeconds += 1
+        if dailyPracticeSeconds >= dailyPracticeGoalSeconds {
+            didShowDailyEncouragement = true
+            shouldShowDailyEncouragement = true
+        }
+        saveState()
+    }
+
+    func dismissDailyEncouragement() {
+        shouldShowDailyEncouragement = false
     }
 
     func submitCurrentAnswer(_ answer: String, vocabularyLevel: VocabularyLevel) async {
@@ -149,6 +209,7 @@ final class GrammarStore: ObservableObject {
         if !result.isCorrect {
             addSimilarExercise(from: result, skillID: skill.id)
         }
+        draftAnswer = ""
         saveState()
     }
 
@@ -229,7 +290,12 @@ final class GrammarStore: ObservableObject {
             selectedSkillID: selectedSkillID,
             selectedExerciseID: selectedExerciseID,
             activeExerciseIDs: activeExerciseIDs,
-            activeExerciseIndex: activeExerciseIndex
+            activeExerciseIndex: activeExerciseIndex,
+            draftAnswer: draftAnswer,
+            activeVocabularyLevel: activeVocabularyLevel,
+            dailyPracticeDate: dailyPracticeDate,
+            dailyPracticeSeconds: dailyPracticeSeconds,
+            didShowDailyEncouragement: didShowDailyEncouragement
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
@@ -243,6 +309,24 @@ final class GrammarStore: ObservableObject {
     private static func clearPersistedState(storageKey: String) {
         UserDefaults.standard.removeObject(forKey: storageKey)
     }
+
+    private func resetDailyPracticeIfNeeded() {
+        let today = Self.todayKey()
+        guard dailyPracticeDate != today else { return }
+        dailyPracticeDate = today
+        dailyPracticeSeconds = 0
+        didShowDailyEncouragement = false
+        shouldShowDailyEncouragement = false
+        saveState()
+    }
+
+    private static func todayKey() -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = .current
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
 }
 
 private struct LearningState: Codable {
@@ -253,6 +337,11 @@ private struct LearningState: Codable {
     let selectedExerciseID: UUID?
     let activeExerciseIDs: [UUID]
     let activeExerciseIndex: Int
+    let draftAnswer: String
+    let activeVocabularyLevel: VocabularyLevel
+    let dailyPracticeDate: String
+    let dailyPracticeSeconds: Int
+    let didShowDailyEncouragement: Bool
 }
 
 enum GrammarSeed {
