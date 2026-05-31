@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,7 @@ load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+APP_CLIENT_TOKEN = os.getenv("APP_CLIENT_TOKEN", "")
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")
@@ -35,6 +36,17 @@ class GradeRequest(BaseModel):
     reference_answer: str = Field(min_length=1)
     user_answer: str = Field(min_length=1)
     vocabulary_level: str = Field(default="四级", min_length=1)
+
+
+class ChatMessage(BaseModel):
+    role: str = Field(pattern="^(system|user|assistant)$")
+    content: str = Field(min_length=1)
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1)
+    temperature: float = Field(default=0.4, ge=0, le=2)
+    response_format: dict[str, str] | None = None
 
 
 class GenerateExerciseRequest(BaseModel):
@@ -71,6 +83,45 @@ class GradeResponse(BaseModel):
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/chat")
+async def chat(
+    request: ChatRequest,
+    x_app_token: str | None = Header(default=None, alias="X-App-Token"),
+) -> dict[str, Any]:
+    verify_app_token(x_app_token)
+    if not DEEPSEEK_API_KEY:
+        raise HTTPException(status_code=500, detail="DEEPSEEK_API_KEY is not configured")
+
+    payload: dict[str, Any] = {
+        "model": DEEPSEEK_MODEL,
+        "messages": [message.model_dump() for message in request.messages],
+        "temperature": request.temperature,
+    }
+    if request.response_format is not None:
+        payload["response_format"] = request.response_format
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{DEEPSEEK_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"DeepSeek API error: {exc.response.status_code}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Unable to reach DeepSeek API") from exc
+
+    return response.json()
 
 
 @app.post("/generate-exercise", response_model=SingleExerciseResponse)
@@ -261,3 +312,10 @@ def extract_content(response_json: dict[str, Any]) -> str:
         return response_json["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="DeepSeek response missing content") from exc
+
+
+def verify_app_token(token: str | None) -> None:
+    if not APP_CLIENT_TOKEN:
+        raise HTTPException(status_code=500, detail="APP_CLIENT_TOKEN is not configured")
+    if token != APP_CLIENT_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid app token")
