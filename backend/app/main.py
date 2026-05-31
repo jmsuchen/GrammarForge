@@ -96,7 +96,7 @@ async def chat(
 
     payload: dict[str, Any] = {
         "model": DEEPSEEK_MODEL,
-        "messages": [message.model_dump() for message in request.messages],
+        "messages": [model_to_dict(message) for message in request.messages],
         "temperature": request.temperature,
     }
     if request.response_format is not None:
@@ -188,7 +188,7 @@ async def generate_exercise_set(request: GenerateExerciseRequest) -> GenerateExe
     content = extract_content(response.json())
     try:
         data = json.loads(content)
-        return GenerateExerciseResponse.model_validate(data)
+        return validate_model(GenerateExerciseResponse, data)
     except (json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(status_code=502, detail="DeepSeek returned invalid exercise JSON") from exc
 
@@ -239,7 +239,7 @@ async def grade(request: GradeRequest) -> GradeResponse:
     content = extract_content(response.json())
     try:
         data = json.loads(content)
-        return GradeResponse.model_validate(data)
+        return validate_model(GradeResponse, data)
     except (json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(status_code=502, detail="DeepSeek returned invalid grading JSON") from exc
 
@@ -319,3 +319,15 @@ def verify_app_token(token: str | None) -> None:
         raise HTTPException(status_code=500, detail="APP_CLIENT_TOKEN is not configured")
     if token != APP_CLIENT_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid app token")
+
+
+def model_to_dict(model: BaseModel) -> dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
+
+
+def validate_model(model_class: type[BaseModel], data: dict[str, Any]) -> BaseModel:
+    if hasattr(model_class, "model_validate"):
+        return model_class.model_validate(data)
+    return model_class.parse_obj(data)
